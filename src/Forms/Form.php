@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace Nette\Forms;
 
 use Nette;
+use Nette\Utils\Callback;
 use Nette\Utils\Html;
 
 
@@ -82,16 +83,16 @@ class Form extends Container implements Nette\HtmlStringable
 	public const PROTECTOR_ID = '_token_';
 
 	/** @var callable[]&(callable(Form, mixed): void)[]; Occurs when the form is submitted and successfully validated */
-	public $onSuccess;
+	public $onSuccess = [];
 
 	/** @var callable[]&(callable(Form): void)[]; Occurs when the form is submitted and is not valid */
-	public $onError;
+	public $onError = [];
 
 	/** @var callable[]&(callable(Form): void)[]; Occurs when the form is submitted */
-	public $onSubmit;
+	public $onSubmit = [];
 
 	/** @var callable[]&(callable(Form): void)[]; Occurs before the form is rendered */
-	public $onRender;
+	public $onRender = [];
 
 	/** @internal @var Nette\Http\IRequest  used only by standalone form */
 	public $httpRequest;
@@ -420,38 +421,28 @@ class Form extends Container implements Nette\HtmlStringable
 
 		if ($this->submittedBy instanceof SubmitterControl) {
 			if ($this->isValid()) {
-				if ($handlers = $this->submittedBy->onClick) {
-					if (!is_iterable($handlers)) {
-						throw new Nette\UnexpectedValueException("Property \$onClick in button '{$this->submittedBy->getName()}' must be iterable, " . gettype($handlers) . ' given.');
-					}
-					$this->invokeHandlers($handlers, $this->submittedBy);
-				}
+				$this->invokeHandlers($this->submittedBy->onClick, $this->submittedBy);
 			} else {
-				$this->submittedBy->onInvalidClick($this->submittedBy);
+				Callback::invokeAll($this->submittedBy->onInvalidClick, $this->submittedBy);
 			}
+		}
+
+		if ($this->isValid()) {
+			$this->invokeHandlers($this->onSuccess);
 		}
 
 		if (!$this->isValid()) {
-			$this->onError($this);
-
-		} elseif ($this->onSuccess !== null) {
-			if (!is_iterable($this->onSuccess)) {
-				throw new Nette\UnexpectedValueException('Property Form::$onSuccess must be iterable, ' . gettype($this->onSuccess) . ' given.');
-			}
-			$this->invokeHandlers($this->onSuccess);
-			if (!$this->isValid()) {
-				$this->onError($this);
-			}
+			Callback::invokeAll($this->onError, $this);
 		}
 
-		$this->onSubmit($this);
+		Callback::invokeAll($this->onSubmit, $this);
 	}
 
 
 	private function invokeHandlers(iterable $handlers, $button = null): void
 	{
 		foreach ($handlers as $handler) {
-			$params = Nette\Utils\Callback::toReflection($handler)->getParameters();
+			$params = Callback::toReflection($handler)->getParameters();
 			$values = isset($params[1])
 				? $this->getValues($params[1]->getType() instanceof \ReflectionNamedType ? $params[1]->getType()->getName() : null)
 				: null;
@@ -630,7 +621,7 @@ class Form extends Container implements Nette\HtmlStringable
 		if (!$this->beforeRenderCalled) {
 			$this->beforeRenderCalled = true;
 			$this->beforeRender();
-			$this->onRender($this);
+			Callback::invokeAll($this->onRender, $this);
 		}
 	}
 
